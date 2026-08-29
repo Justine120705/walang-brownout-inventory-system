@@ -58,7 +58,15 @@ export default function Inventory() {
   // Load from localStorage or initialize defaults
   const [inventoryData, setInventoryData] = useState(() => {
     const saved = localStorage.getItem('inventory_db');
-    return saved ? JSON.parse(saved) : defaultInventory;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return defaultInventory;
   });
 
   // Sync dataset changes to localStorage
@@ -66,17 +74,25 @@ export default function Inventory() {
     localStorage.setItem('inventory_db', JSON.stringify(inventoryData));
   }, [inventoryData]);
 
-  // Normalized Multi-Filter Logic
+  // Bulletproof Normalized Multi-Filter Logic
   const filteredProducts = useMemo(() => {
+    if (!Array.isArray(inventoryData)) return [];
+    
     return inventoryData.filter(item => {
+      const sku = item?.sku || '';
+      const name = item?.name || '';
+      const location = item?.location || '';
+      const category = item?.category || '';
+      const status = item?.status || '';
+
       const matchesSearch = 
-        item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.location.toLowerCase().includes(searchTerm.toLowerCase());
+        sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        location.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesCategory = selectedCategory === '' || item.category.toLowerCase() === selectedCategory.toLowerCase();
+      const matchesCategory = selectedCategory === '' || category.toLowerCase() === selectedCategory.toLowerCase();
       
-      const normalizedItemStatus = item.status.toLowerCase().replace(/\s+/g, '-');
+      const normalizedItemStatus = status.toLowerCase().replace(/\s+/g, '-');
       const normalizedSelectedStatus = selectedStatus.toLowerCase().replace(/\s+/g, '-');
       const matchesStatus = selectedStatus === '' || normalizedItemStatus === normalizedSelectedStatus;
 

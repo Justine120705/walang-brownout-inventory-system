@@ -10,7 +10,7 @@ export default function UserManagement() {
   const [isNavOpen, setIsNavOpen] = useState(false);
 
   // Role Check & User Session
-  const [currentUser, setCurrentUser] = useState({ name: 'Justin Ralph', role: 'Administrator' });
+  const [currentUser, setCurrentUser] = useState({ name: 'Justin Ralph', email: 'justineralph107@gmail.com', role: 'Administrator' });
   useEffect(() => {
     const session = localStorage.getItem('current_user');
     if (session) {
@@ -178,7 +178,11 @@ export default function UserManagement() {
       return;
     }
     if (user.email === 'justineralph107@gmail.com') {
-      alert('Action Denied: Primary Administrator account cannot be deleted.');
+      alert('Action Denied: Primary root Administrator account cannot be deleted.');
+      return;
+    }
+    if (currentUser.email && user.email.toLowerCase() === currentUser.email.toLowerCase()) {
+      alert('Action Denied: You cannot delete your own active session account.');
       return;
     }
     if (confirm(`Are you sure you want to delete ${user.name} (${user.id})?`)) {

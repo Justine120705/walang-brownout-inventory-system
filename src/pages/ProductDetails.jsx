@@ -44,6 +44,7 @@ export default function ProductDetails() {
     location: '',
     desc: '',
     threshold: 5,
+    status: 'In Stock',
     receivedDate: '2026-08-01',
     expiryDate: '2028-08-01'
   });
@@ -81,10 +82,11 @@ export default function ProductDetails() {
         category: currentProd.category || 'Generators',
         supplier: currentProd.supplier || 'PowerPro Heavy Industries Inc.',
         location: currentProd.location || 'Main Warehouse - Section A4',
-        receivedDate: currentProd.receivedDate || '2026-08-01',
-        expiryDate: currentProd.expiryDate || '2028-08-01',
         desc: currentProd.desc || 'No description provided.',
-        threshold: currentProd.threshold || 5
+        threshold: currentProd.threshold || 5,
+        status: currentProd.status || 'In Stock',
+        receivedDate: currentProd.receivedDate || '2026-08-01',
+        expiryDate: currentProd.expiryDate || '2028-08-01'
       });
 
       setStockAdjustment({ 
@@ -121,12 +123,16 @@ export default function ProductDetails() {
     const saved = localStorage.getItem('inventory_db');
     let updatedDb = [];
     if (saved) {
-      const db = JSON.parse(saved);
-      const exists = db.some(item => item.sku.toLowerCase() === sku.toLowerCase());
-      if (exists) {
-        updatedDb = db.map(item => item.sku.toLowerCase() === sku.toLowerCase() ? updatedProduct : item);
-      } else {
-        updatedDb = [updatedProduct, ...db];
+      try {
+        const db = JSON.parse(saved);
+        const exists = db.some(item => item.sku.toLowerCase() === sku.toLowerCase());
+        if (exists) {
+          updatedDb = db.map(item => item.sku.toLowerCase() === sku.toLowerCase() ? updatedProduct : item);
+        } else {
+          updatedDb = [updatedProduct, ...db];
+        }
+      } catch (e) {
+        console.error(e);
       }
     } else {
       updatedDb = [updatedProduct];
@@ -195,6 +201,10 @@ export default function ProductDetails() {
       return;
     }
 
+    let badgeClass = 'bg-sky-50 text-sky-800 border-sky-300';
+    if (editFormData.status === 'Low Stock') badgeClass = 'bg-amber-50 text-amber-800 border-amber-300';
+    if (editFormData.status === 'Out of Stock') badgeClass = 'bg-rose-50 text-rose-800 border-rose-300';
+
     const updatedProduct = {
       ...product,
       name: editFormData.name,
@@ -202,15 +212,17 @@ export default function ProductDetails() {
       category: editFormData.category,
       supplier: editFormData.supplier,
       location: editFormData.location,
+      status: editFormData.status,
+      badgeClass: badgeClass,
       receivedDate: editFormData.receivedDate,
       expiryDate: editFormData.expiryDate,
       desc: editFormData.desc,
       threshold: Number(editFormData.threshold) || 5
     };
 
-    saveProductAndLog(updatedProduct, 'Product Info & Batch Dates Update');
+    saveProductAndLog(updatedProduct, 'Product Info, Status & Batch Dates Update');
     setIsEditModalOpen(false);
-    alert('Product details and dates updated successfully!');
+    alert('Product details and status updated successfully!');
   };
 
   const handleStockSubmit = (e) => {
@@ -225,8 +237,9 @@ export default function ProductDetails() {
     const newReserved = Number(stockAdjustment.reserved) || 0;
     const threshold = Number(stockAdjustment.threshold) || 5;
 
-    let newStatus = 'In Stock';
-    let badgeClass = 'bg-sky-50 text-sky-800 border-sky-300';
+    let newStatus = product.status || 'In Stock';
+    let badgeClass = product.badgeClass || 'bg-sky-50 text-sky-800 border-sky-300';
+    
     if (newOnHand === 0) {
       newStatus = 'Out of Stock';
       badgeClass = 'bg-rose-50 text-rose-800 border-rose-300';
@@ -349,8 +362,11 @@ export default function ProductDetails() {
           
           {/* LEFT PANEL: PRODUCT INFORMATION */}
           <div className="lg:col-span-6 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
-            <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-3">
-              PRODUCT INFORMATION
+            <h2 className="text-xs font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-3 flex items-center justify-between">
+              <span>PRODUCT INFORMATION</span>
+              <span className={`inline-block border font-black px-2.5 py-0.5 rounded-full text-[10px] ${product.badgeClass || 'bg-sky-50 text-sky-800 border-sky-300'}`}>
+                {product.status || 'In Stock'}
+              </span>
             </h2>
 
             <div className="space-y-3">
@@ -548,14 +564,29 @@ export default function ProductDetails() {
                 </div>
               </div>
 
-              <div>
-                <label className="block mb-1 uppercase text-[10px] font-black">Supplier / Brand</label>
-                <input 
-                  type="text" 
-                  value={editFormData.supplier} 
-                  onChange={(e) => setEditFormData({ ...editFormData, supplier: e.target.value })} 
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500" 
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1 uppercase text-[10px] font-black">Supplier / Brand</label>
+                  <input 
+                    type="text" 
+                    value={editFormData.supplier} 
+                    onChange={(e) => setEditFormData({ ...editFormData, supplier: e.target.value })} 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500" 
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1 uppercase text-[10px] font-black text-sky-700">Product Status</label>
+                  <select 
+                    value={editFormData.status} 
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })} 
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer"
+                  >
+                    <option value="In Stock">In Stock</option>
+                    <option value="Low Stock">Low Stock</option>
+                    <option value="Out of Stock">Out of Stock</option>
+                  </select>
+                </div>
               </div>
 
               <div>

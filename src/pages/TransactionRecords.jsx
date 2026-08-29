@@ -3,7 +3,7 @@ import Header from '../components/Header.jsx';
 import Navbar from '../components/Navbar.jsx';
 import { 
   Search, ArrowUpRight, ArrowDownLeft, ShieldAlert, 
-  ChevronLeft, ChevronRight, FileSpreadsheet, Filter, X 
+  ChevronLeft, ChevronRight, FileSpreadsheet, Filter, X, Trash2 
 } from 'lucide-react';
 
 export default function TransactionRecords() {
@@ -97,6 +97,28 @@ export default function TransactionRecords() {
     document.body.removeChild(link);
   };
 
+  const handleDeleteTransaction = (id) => {
+    if (isWarehouseStaff) {
+      alert('Access Denied: Warehouse Staff cannot delete transaction logs.');
+      return;
+    }
+    if (confirm(`Are you sure you want to delete transaction record ${id}?`)) {
+      setTransactions(prev => prev.filter(tx => tx.id !== id));
+    }
+  };
+
+  const handleClearAllHistory = () => {
+    if (isWarehouseStaff) {
+      alert('Access Denied: Warehouse Staff cannot clear transaction history.');
+      return;
+    }
+    if (confirm('Are you sure you want to clear all transaction records? This action cannot be undone.')) {
+      setTransactions([]);
+      localStorage.removeItem('transaction_records_db');
+      setCurrentPage(1);
+    }
+  };
+
   return (
     <div className="bg-slate-100 text-slate-900 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden w-full">
       <Navbar isOpen={isNavOpen} onClose={() => setIsNavOpen(false)} />
@@ -124,13 +146,23 @@ export default function TransactionRecords() {
           </div>
 
           {!isWarehouseStaff && (
-            <button 
-              onClick={handleExportCSV}
-              className="bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer self-start sm:self-auto active:scale-95"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Export Audit Logs</span>
-            </button>
+            <div className="flex items-center space-x-2 self-start sm:self-auto">
+              <button 
+                onClick={handleClearAllHistory}
+                className="bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-xs py-2.5 px-4 rounded-xl border border-rose-200 shadow-xs transition flex items-center justify-center space-x-1.5 cursor-pointer active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete All History</span>
+              </button>
+
+              <button 
+                onClick={handleExportCSV}
+                className="bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer active:scale-95"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Export Audit Logs</span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -187,6 +219,7 @@ export default function TransactionRecords() {
                   <th className="py-3.5 px-4">Logged By</th>
                   <th className="py-3.5 px-4">Timestamp</th>
                   <th className="py-3.5 px-4 text-center">Status</th>
+                  {!isWarehouseStaff && <th className="py-3.5 px-4 text-center">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-semibold">
@@ -214,11 +247,22 @@ export default function TransactionRecords() {
                           {tx.status}
                         </span>
                       </td>
+                      {!isWarehouseStaff && (
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-300 transition cursor-pointer"
+                            title="Delete Record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="7" className="py-8 text-center text-xs font-bold text-slate-400">
+                    <td colSpan={isWarehouseStaff ? "7" : "8"} className="py-8 text-center text-xs font-bold text-slate-400">
                       No transaction records found matching your filter criteria.
                     </td>
                   </tr>

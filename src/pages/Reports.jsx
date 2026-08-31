@@ -30,7 +30,7 @@ export default function Reports() {
     selectedReport: 'Sales Movement History',
     exportFormat: 'pdf',
     startDate: '2026-08-01',
-    endDate: '2026-08-22',
+    endDate: '2026-08-31',
     category: 'All Categories'
   };
 
@@ -56,7 +56,7 @@ export default function Reports() {
     localStorage.setItem('generated_reports_db', JSON.stringify(recentReports));
   }, [recentReports]);
 
-  // Added Reorder Planner to Available Reports
+  // Available Reports
   const availableReports = [
     { id: 'Inventory Summary', title: 'Inventory Summary', desc: 'Overall stock levels, valuation, and SKU balances.' },
     { id: 'Low Stock & Reorder', title: 'Low Stock & Reorder', desc: 'Items below minimum safety threshold requiring purchase orders.' },
@@ -66,50 +66,125 @@ export default function Reports() {
     { id: 'Damaged & Expired Stock', title: 'Damaged & Expired Stock', desc: 'Write-off logs, batch expiration dates, and warranty status.' }
   ];
 
-  const reportDatasets = {
-    'Reorder Planner': {
-      headers: ['PO Reference', 'Item Description', 'Daily Usage', 'Lead Time', 'ROP Threshold', 'Suggested Order', 'Primary Supplier', 'Status'],
-      rows: [
-        ['PO-2026-009', 'Inverter Generator 3kVA', '12 Units/Day', '7 Days', '104 Units', '150 Units', 'PowerTech Energy Solutions', 'Pending Approval'],
-        ['PO-2026-008', 'Solar Charge Controller 60A', '5 Units/Day', '5 Days', '45 Units', '60 Units', 'Solaris Corp', 'Completed']
-      ]
-    },
-    'Sales Movement History': {
-      headers: ['Transaction ID', 'SKU Code', 'Item Description', 'Movement Type', 'Units Moved', 'Date'],
-      rows: [
-        ['TRX-9041', 'SKU-8821', 'Inverter Generator 3kVA', 'Stock Out (Sale)', '-2 Units', '2026-08-03'],
-        ['TRX-9042', 'SKU-4102', 'Solar Charge Controller 60A', 'Stock Out (Sale)', '-5 Units', '2026-08-08']
-      ]
-    },
-    'Inventory Summary': {
-      headers: ['SKU Code', 'Item Description', 'Category', 'On Hand Qty', 'Unit Price', 'Total Value'],
-      rows: [
-        ['SKU-8821', 'Inverter Generator 3kVA', 'Generators', '18 Units', '₱24,500.00', '₱441,000.00'],
-        ['SKU-4102', 'Solar Charge Controller 60A', 'Solar Systems', '3 Units', '₱8,200.00', '₱24,600.00']
-      ]
-    },
-    'Low Stock & Reorder': {
-      headers: ['SKU Code', 'Item Description', 'Category', 'Current Qty', 'Min Threshold', 'Suggested Order'],
-      rows: [
-        ['SKU-4102', 'Solar Charge Controller 60A', 'Solar Systems', '3 Units', '5 Units', '15 Units']
-      ]
-    },
-    'Supplier Performance': {
-      headers: ['Supplier Name', 'Category', 'Completed Orders', 'Avg Lead Time', 'Fulfillment Rate'],
-      rows: [
-        ['PowerPro Heavy Industries', 'Generators', '24 Orders', '2 Days', '98.5%']
-      ]
-    },
-    'Damaged & Expired Stock': {
-      headers: ['Batch Code', 'SKU Code', 'Item Description', 'Reason / Issue', 'Qty Logged', 'Status'],
-      rows: [
-        ['BAT-2026-A', 'SKU-3092', 'Monocrystalline Solar Panel 450W', 'Warranty Threshold Near Limit', '5 Units', 'Under Review']
-      ]
+  // Dynamic Dataset Builder from LocalStorage
+  const getDynamicReportDataset = (reportType) => {
+    const savedInv = localStorage.getItem('inventory_db');
+    const invList = savedInv ? JSON.parse(savedInv) : [];
+
+    const savedTx = localStorage.getItem('transaction_records_db');
+    const txList = savedTx ? JSON.parse(savedTx) : [];
+
+    const savedPo = localStorage.getItem('purchase_orders_db');
+    const poList = savedPo ? JSON.parse(savedPo) : [];
+
+    switch (reportType) {
+      case 'Inventory Summary': {
+        const headers = ['SKU Code', 'Item Description', 'Category', 'On Hand Qty', 'Unit Price', 'Total Value'];
+        const rows = invList.length > 0 ? invList.map(item => {
+          const priceNum = parseFloat(String(item.price || '0').replace(/[^0-9.]/g, '')) || 0;
+          const onHand = Number(item.onHand) || 0;
+          const totalVal = `₱${(onHand * priceNum).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          return [
+            item.sku || 'N/A',
+            item.name || 'N/A',
+            item.category || 'Generators',
+            `${onHand} Units`,
+            item.price || '₱0.00',
+            totalVal
+          ];
+        }) : [];
+        return { headers, rows };
+      }
+
+      case 'Low Stock & Reorder': {
+        const headers = ['SKU Code', 'Item Description', 'Category', 'Current Qty', 'Min Threshold', 'Suggested Order'];
+        const lowStockItems = invList.filter(item => {
+          const onHand = Number(item.onHand) || 0;
+          const threshold = Number(item.threshold) || 5;
+          return onHand <= threshold;
+        });
+        const rows = lowStockItems.length > 0 ? lowStockItems.map(item => {
+          const onHand = Number(item.onHand) || 0;
+          const threshold = Number(item.threshold) || 5;
+          return [
+            item.sku || 'N/A',
+            item.name || 'N/A',
+            item.category || 'Generators',
+            `${onHand} Units`,
+            `${threshold} Units`,
+            `${Math.max(threshold * 3 - onHand, 15) } Units`
+          ];
+        }) : [];
+        return { headers, rows };
+      }
+
+      case 'Reorder Planner': {
+        const headers = ['PO Reference', 'Item Description', 'Order Qty', 'Supplier', 'Status', 'Date Triggered'];
+        const rows = poList.length > 0 ? poList.map(po => [
+          po.id || 'N/A',
+          po.item || 'N/A',
+          `${po.qty || 0} Units`,
+          po.supplier || 'N/A',
+          po.status || 'Pending',
+          po.date || 'N/A'
+        ]) : [];
+        return { headers, rows };
+      }
+
+      case 'Sales Movement History': {
+        const headers = ['Transaction ID', 'SKU Code', 'Item Description', 'Movement Type', 'Quantity', 'Logged By', 'Date'];
+        const rows = txList.length > 0 ? txList.map(tx => [
+          tx.id || 'N/A',
+          tx.sku || 'N/A',
+          tx.name || 'N/A',
+          tx.type || 'Movement',
+          `${tx.qty || 0} Units`,
+          tx.user || 'System',
+          tx.date || 'N/A'
+        ]) : [];
+        return { headers, rows };
+      }
+
+      case 'Supplier Performance': {
+        const headers = ['Supplier Name', 'Associated Category', 'Active Products Count', 'Reliability Rating'];
+        const suppliersMap = {};
+        invList.forEach(item => {
+          const sup = item.supplier || 'PowerPro Heavy Industries Inc.';
+          if (!suppliersMap[sup]) {
+            suppliersMap[sup] = { count: 0, category: item.category || 'Generators' };
+          }
+          suppliersMap[sup].count += 1;
+        });
+
+        const rows = Object.keys(suppliersMap).length > 0 ? Object.keys(suppliersMap).map(sup => [
+          sup,
+          suppliersMap[sup].category,
+          `${suppliersMap[sup].count} SKUs`,
+          '98.5% (High)'
+        ]) : [];
+        return { headers, rows };
+      }
+
+      case 'Damaged & Expired Stock': {
+        const headers = ['SKU Code', 'Item Description', 'Location', 'On Hand Qty', 'Expiry Date', 'Status'];
+        const rows = invList.length > 0 ? invList.map(item => [
+          item.sku || 'N/A',
+          item.name || 'N/A',
+          item.location || 'Warehouse Main',
+          `${item.onHand || 0} Units`,
+          item.expiryDate || '2028-08-01',
+          (Number(item.onHand) || 0) === 0 ? 'Depleted' : 'Active / Valid'
+        ]) : [];
+        return { headers, rows };
+      }
+
+      default:
+        return { headers: ['Info'], rows: [['No data available']] };
     }
   };
 
   const executeDownload = (reportType, fileName) => {
-    const dataset = reportDatasets[reportType] || reportDatasets['Sales Movement History'];
+    const dataset = getDynamicReportDataset(reportType);
 
     if (fileName.endsWith('.csv') || fileName.endsWith('.xlsx')) {
       let csvContent = "data:text/csv;charset=utf-8,";
@@ -138,14 +213,20 @@ export default function Reports() {
                 .data-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
                 .data-table th { background: #e0f2fe; color: #0369a1; text-align: left; padding: 10px; font-size: 11px; border: 1px solid #bae6fd; font-weight: 800; }
                 .data-table td { padding: 10px; font-size: 12px; border: 1px solid #e2e8f0; font-weight: 600; }
+                .empty { text-align: center; padding: 25px; color: #64748b; font-weight: bold; }
               </style>
             </head>
             <body>
               <h1>WalangBrownout Reports: ${reportType}</h1>
-              <div class="meta">File: ${fileName}</div>
+              <div class="meta">File: ${fileName} | Generated: ${new Date().toLocaleString()}</div>
               <table class="data-table">
                 <thead><tr>${dataset.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
-                <tbody>${dataset.rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody>
+                <tbody>
+                  ${dataset.rows.length > 0 
+                    ? dataset.rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')
+                    : `<tr><td colspan="${dataset.headers.length}" class="empty">No inventory data available in local storage.</td></tr>`
+                  }
+                </tbody>
               </table>
               <script>window.onload = function() { window.print(); }</script>
             </body>

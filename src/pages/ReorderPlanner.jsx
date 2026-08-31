@@ -357,8 +357,8 @@ export default function ReorderPlanner() {
         <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden space-y-4">
           <div className="p-5 border-b border-slate-200 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">PURCHASE ORDER HISTORY (SHOWING 5 PER PAGE)</h2>
-              <p className="text-[11px] font-semibold text-slate-500 mt-0.5">Synced in LocalStorage</p>
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">PURCHASE ORDER HISTORY</h2>
+              <p className="text-[11px] font-semibold text-slate-500 mt-0.5"></p>
             </div>
 
             {purchaseOrders.length > 0 && !isWarehouseStaff && (

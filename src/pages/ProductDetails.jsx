@@ -1,17 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import Header from '../components/Header.jsx';
 import Navbar from '../components/Navbar.jsx';
 import { 
   ArrowLeft, Edit3, Sliders, ShieldCheck, Clock, 
-  Trash2, X, ShieldAlert, PackageCheck, AlertCircle 
+  Trash2, X, ShieldAlert, PackageCheck, AlertCircle, Search 
 } from 'lucide-react';
 
 export default function ProductDetails() {
   const [isNavOpen, setIsNavOpen] = useState(false);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const sku = searchParams.get('sku') || 'SKU-8821';
+
+  // Load Inventory DB first to determine default SKU
+  const [inventoryList, setInventoryList] = useState([]);
+  
+  useEffect(() => {
+    const saved = localStorage.getItem('inventory_db');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setInventoryList(parsed);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  const querySku = searchParams.get('sku');
+  
+  // Determine active SKU: If not in URL, pick the first item in inventory
+  const sku = useMemo(() => {
+    if (querySku) return querySku;
+    if (inventoryList.length > 0 && inventoryList[0]?.sku) {
+      return inventoryList[0].sku;
+    }
+    return 'SKU-8821';
+  }, [querySku, inventoryList]);
 
   // Role Check & User Session
   const [currentUser, setCurrentUser] = useState({ name: 'Justin Ralph', role: 'Administrator' });
@@ -34,6 +61,17 @@ export default function ProductDetails() {
   const [recentLogs, setRecentLogs] = useState([]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+
+  // Filter products for the search dropdown in the middle
+  const filteredProductsForSearch = useMemo(() => {
+    if (!productSearchTerm.trim()) return [];
+    return inventoryList.filter(item => 
+      (item?.name && item.name.toLowerCase().includes(productSearchTerm.toLowerCase())) ||
+      (item?.sku && item.sku.toLowerCase().includes(productSearchTerm.toLowerCase())) ||
+      (item?.category && item.category.toLowerCase().includes(productSearchTerm.toLowerCase()))
+    ).slice(0, 5);
+  }, [inventoryList, productSearchTerm]);
 
   // Form States
   const [editFormData, setEditFormData] = useState({
@@ -61,13 +99,17 @@ export default function ProductDetails() {
   useEffect(() => {
     const saved = localStorage.getItem('inventory_db');
     let currentProd = null;
+    let invParsed = [];
 
     if (saved) {
       try {
-        const db = JSON.parse(saved);
-        const found = db.find(item => item.sku && item.sku.toLowerCase() === sku.toLowerCase());
+        invParsed = JSON.parse(saved);
+        setInventoryList(invParsed);
+        const found = invParsed.find(item => item && item.sku && item.sku.toLowerCase() === sku.toLowerCase());
         if (found) {
           currentProd = found;
+        } else if (invParsed.length > 0 && !querySku) {
+          currentProd = invParsed[0];
         }
       } catch (e) {
         console.error(e);
@@ -102,7 +144,7 @@ export default function ProductDetails() {
       if (savedTx) {
         try {
           const txList = JSON.parse(savedTx);
-          const filteredTx = txList.filter(t => t.sku && t.sku.toLowerCase() === sku.toLowerCase());
+          const filteredTx = txList.filter(t => t && t.sku && t.sku.toLowerCase() === (currentProd.sku || sku).toLowerCase());
           setRecentLogs(filteredTx.slice(0, 3));
         } catch (e) {
           console.error(e);
@@ -111,23 +153,22 @@ export default function ProductDetails() {
         setRecentLogs([]);
       }
     } else {
-      setProduct(null); // Product was deleted or does not exist in localStorage
+      setProduct(null); 
     }
-  }, [sku]);
+  }, [sku, querySku]);
 
   // Sync Changes to LocalStorage and Log Audit Event
   const saveProductAndLog = (updatedProduct, actionType) => {
     setProduct(updatedProduct);
     
-    // 1. Update inventory_db
     const saved = localStorage.getItem('inventory_db');
     let updatedDb = [];
     if (saved) {
       try {
         const db = JSON.parse(saved);
-        const exists = db.some(item => item.sku.toLowerCase() === sku.toLowerCase());
+        const exists = db.some(item => item && item.sku && item.sku.toLowerCase() === updatedProduct.sku.toLowerCase());
         if (exists) {
-          updatedDb = db.map(item => item.sku.toLowerCase() === sku.toLowerCase() ? updatedProduct : item);
+          updatedDb = db.map(item => item && item.sku && item.sku.toLowerCase() === updatedProduct.sku.toLowerCase() ? updatedProduct : item);
         } else {
           updatedDb = [updatedProduct, ...db];
         }
@@ -138,8 +179,9 @@ export default function ProductDetails() {
       updatedDb = [updatedProduct];
     }
     localStorage.setItem('inventory_db', JSON.stringify(updatedDb));
+    setInventoryList(updatedDb);
 
-    // 2. Add Audit Log Entry to transaction_records_db
+    // Add Audit Log Entry to transaction_records_db
     const savedTx = localStorage.getItem('transaction_records_db');
     const txList = savedTx ? JSON.parse(savedTx) : [];
     const newTxId = `TRX-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -157,43 +199,9 @@ export default function ProductDetails() {
 
     const newLogs = [newTransaction, ...txList];
     localStorage.setItem('transaction_records_db', JSON.stringify(newLogs));
-    setRecentLogs(newLogs.filter(t => t.sku && t.sku.toLowerCase() === sku.toLowerCase()).slice(0, 3));
-
-    // 3. Manage System Alerts based on Threshold & Expiry
-    const savedAlerts = localStorage.getItem('alerts_db');
-    let alertsList = savedAlerts ? JSON.parse(savedAlerts) : [];
-
-    const threshold = Number(updatedProduct.threshold) || 5;
-    if (updatedProduct.onHand === 0) {
-      const newAlert = {
-        id: `ALT-${Math.floor(1000 + Math.random() * 9000)}`,
-        type: 'Out of Stock',
-        item: updatedProduct.name,
-        sku: updatedProduct.sku,
-        details: `Out of Stock • ${updatedProduct.sku}`,
-        priority: 'Critical',
-        status: 'Active'
-      };
-      alertsList = [newAlert, ...alertsList.filter(a => a.sku !== updatedProduct.sku)];
-    } else if (updatedProduct.onHand <= threshold) {
-      const newAlert = {
-        id: `ALT-${Math.floor(1000 + Math.random() * 9000)}`,
-        type: 'Low Stock',
-        item: updatedProduct.name,
-        sku: updatedProduct.sku,
-        details: `Low Stock (${updatedProduct.onHand} left) • ${updatedProduct.sku}`,
-        priority: 'Warning',
-        status: 'Active'
-      };
-      alertsList = [newAlert, ...alertsList.filter(a => a.sku !== updatedProduct.sku)];
-    } else {
-      alertsList = alertsList.map(a => a.sku === updatedProduct.sku ? { ...a, status: 'Resolved' } : a);
-    }
-
-    localStorage.setItem('alerts_db', JSON.stringify(alertsList));
+    setRecentLogs(newLogs.filter(t => t && t.sku && t.sku.toLowerCase() === updatedProduct.sku.toLowerCase()).slice(0, 3));
   };
 
-  // Button Action Handlers
   const handleEditSubmit = (e) => {
     e.preventDefault();
     if (isWarehouseStaff) {
@@ -274,8 +282,9 @@ export default function ProductDetails() {
       if (saved) {
         try {
           const db = JSON.parse(saved);
-          const filteredDb = db.filter(item => item.sku.toLowerCase() !== sku.toLowerCase());
+          const filteredDb = db.filter(item => item && item.sku && item.sku.toLowerCase() !== product.sku.toLowerCase());
           localStorage.setItem('inventory_db', JSON.stringify(filteredDb));
+          setInventoryList(filteredDb);
         } catch (e) {
           console.error(e);
         }
@@ -290,14 +299,15 @@ export default function ProductDetails() {
     if (!dateStr) return 'N/A';
     try {
       const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
       return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
     } catch (e) {
       return dateStr;
     }
   };
 
-  // If product is deleted or not found in LocalStorage, render clean Not Found state
-  if (!product) {
+  // If product is deleted or not found in LocalStorage
+  if (!product || inventoryList.length === 0) {
     return (
       <div className="bg-slate-100 text-slate-900 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden w-full">
         <Navbar isOpen={isNavOpen} onClose={() => setIsNavOpen(false)} />
@@ -307,15 +317,15 @@ export default function ProductDetails() {
             <AlertCircle className="w-8 h-8" />
           </div>
           <div className="space-y-1">
-            <h2 className="text-xl font-black text-slate-900">Product Not Found or Deleted</h2>
-            <p className="text-xs text-slate-500 font-medium">The SKU <span className="font-mono font-bold text-slate-700">{sku}</span> has been removed from master inventory or does not exist.</p>
+            <h2 className="text-xl font-black text-slate-900">No Products Available in Master Inventory</h2>
+            <p className="text-xs text-slate-500 font-medium">Please add items to your inventory list first before viewing product details.</p>
           </div>
           <Link 
             to="/inventory" 
             className="inline-flex items-center space-x-2 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2.5 rounded-xl text-xs font-extrabold transition shadow-xs cursor-pointer mt-2"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Return to Inventory List</span>
+            <span>Go to Inventory List</span>
           </Link>
         </main>
       </div>
@@ -336,20 +346,49 @@ export default function ProductDetails() {
           </div>
         )}
 
-        {/* Back Button Bar */}
-        <div className="flex items-center justify-between">
+        {/* Top Control Bar with Back Button, Middle Search Bar, and Delete */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <Link 
             to="/inventory" 
-            className="inline-flex items-center space-x-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-black text-slate-700 hover:text-sky-700 hover:border-sky-300 transition shadow-xs cursor-pointer"
+            className="inline-flex items-center space-x-2 bg-white px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-black text-slate-700 hover:text-sky-700 hover:border-sky-300 transition shadow-xs cursor-pointer self-start md:self-auto"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back to Inventory List</span>
           </Link>
 
+          {/* Middle Search Bar to easily find products */}
+          <div className="relative flex-1 max-w-md w-full mx-auto">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input 
+              type="text"
+              value={productSearchTerm}
+              onChange={(e) => setProductSearchTerm(e.target.value)}
+              placeholder="Search product name or SKU in detail view..."
+              className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-900 font-bold placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-xs transition"
+            />
+            {productSearchTerm && filteredProductsForSearch.length > 0 && (
+              <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden divide-y divide-slate-100">
+                {filteredProductsForSearch.map(item => (
+                  <button
+                    key={item.sku}
+                    onClick={() => {
+                      setProductSearchTerm('');
+                      navigate(`/product-details?sku=${item.sku}`);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-xs font-bold hover:bg-sky-50 flex items-center justify-between cursor-pointer"
+                  >
+                    <span className="text-slate-900">{item.name}</span>
+                    <span className="font-mono text-sky-700 text-[10px] bg-sky-50 px-2 py-0.5 rounded border border-sky-200">{item.sku}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {!isWarehouseStaff && (
             <button 
               onClick={handleDeleteProduct}
-              className="text-xs font-extrabold text-rose-600 hover:text-rose-800 transition flex items-center space-x-1 cursor-pointer"
+              className="text-xs font-extrabold text-rose-600 hover:text-rose-800 transition flex items-center space-x-1 cursor-pointer self-end md:self-auto"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete Product</span>
@@ -357,7 +396,7 @@ export default function ProductDetails() {
           )}
         </div>
 
-        {/* Main 2-Column Grid matching provided UI layout */}
+        {/* Main 2-Column Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
           {/* LEFT PANEL: PRODUCT INFORMATION */}
@@ -370,19 +409,16 @@ export default function ProductDetails() {
             </h2>
 
             <div className="space-y-3">
-              {/* Product Name */}
               <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">PRODUCT NAME</p>
                 <p className="text-sm font-black text-slate-900 mt-0.5">{product.name}</p>
               </div>
 
-              {/* SKU Code */}
               <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">SKU CODE</p>
                 <p className="text-xs font-black text-sky-700 font-mono mt-0.5">{product.sku}</p>
               </div>
 
-              {/* Category & Unit Price Row */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">CATEGORY</p>
@@ -395,19 +431,16 @@ export default function ProductDetails() {
                 </div>
               </div>
 
-              {/* Supplier / Brand */}
               <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">SUPPLIER / BRAND</p>
                 <p className="text-xs font-black text-slate-900 mt-0.5">{product.supplier || 'PowerPro Heavy Industries Inc.'}</p>
               </div>
 
-              {/* Primary Location */}
               <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">PRIMARY LOCATION</p>
                 <p className="text-xs font-black text-slate-900 mt-0.5">{product.location}</p>
               </div>
 
-              {/* Received Date & Expiry Date Row */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">RECEIVED DATE</p>
@@ -420,7 +453,6 @@ export default function ProductDetails() {
                 </div>
               </div>
 
-              {/* Description */}
               <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">DESCRIPTION</p>
                 <p className="text-xs text-slate-700 font-medium leading-relaxed mt-1">{product.desc}</p>
@@ -435,34 +467,28 @@ export default function ProductDetails() {
                 INVENTORY SUMMARY
               </h2>
 
-              {/* 4 KPI Metrics Grid */}
               <div className="grid grid-cols-2 gap-3">
-                {/* On Hand Quantity */}
                 <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-center">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">ON HAND QUANTITY</p>
                   <p className="text-2xl font-black text-sky-700 mt-1">{product.onHand}</p>
                 </div>
 
-                {/* Available Stock */}
                 <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-center">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">AVAILABLE STOCK</p>
                   <p className="text-2xl font-black text-slate-900 mt-1">{product.available}</p>
                 </div>
 
-                {/* Reserved / Committed */}
                 <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-center">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">RESERVED / COMMITTED</p>
                   <p className="text-2xl font-black text-slate-900 mt-1">{product.reserved || 0}</p>
                 </div>
 
-                {/* Reorder Threshold */}
                 <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl text-center">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">REORDER THRESHOLD</p>
                   <p className="text-2xl font-black text-amber-700 mt-1">{product.threshold || 5} Units</p>
                 </div>
               </div>
 
-              {/* Recent Activity Log */}
               <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-xl space-y-3">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-200/60 pb-2">
                   RECENT ACTIVITY LOG
@@ -483,7 +509,7 @@ export default function ProductDetails() {
               </div>
             </div>
 
-            {/* Action Buttons at Bottom Right */}
+            {/* Action Buttons */}
             <div className="pt-4 border-t border-slate-100 flex items-center justify-end space-x-2">
               {!isWarehouseStaff && (
                 <button 
@@ -599,7 +625,6 @@ export default function ProductDetails() {
                 />
               </div>
 
-              {/* Received Date & Expiry Date Inputs */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block mb-1 uppercase text-[10px] font-black">Received Date</label>
